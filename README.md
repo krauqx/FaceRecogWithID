@@ -134,7 +134,7 @@ Face-Recognition/
 1. Front camera initializes at **640x480** resolution (4:3)
 2. **face-api.js** models load: TinyFaceDetector, FaceLandmark68, FaceRecognition
 3. Reference face descriptor is extracted from the student's stored photo
-4. Live face detection runs every **1 second**:
+4. Live face detection runs every **500 millisecond**:
    - Detects all faces in frame
    - Validates face quality (centered, proper size, confidence > 0.5)
    - Extracts 128-dimensional face descriptor
@@ -142,7 +142,10 @@ Face-Recognition/
    - Calculates **Euclidean Distance** between live and reference descriptors
    - Converts to similarity score (0-1)
    - If similarity >= **0.58** threshold → **VERIFIED**
-6. On success: plays audio announcement via Web Speech API
+6. Liveness test
+   - Detects the yaw of the detected face
+   - If the yaw reaches the >= **±70** threshold → **VERIFIED**
+7. On success: plays audio announcement via Web Speech API
 
 ---
 
