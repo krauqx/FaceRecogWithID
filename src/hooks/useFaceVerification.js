@@ -43,7 +43,7 @@ const useFaceVerification = (videoRef, referenceFaceImage, onVerified, onFailed)
 
   // --- configuration ---
   const MATCH_THRESHOLD = 0.58;     // minimum similarity score to verify (0-1, higher = stricter)
-  const DETECTION_INTERVAL = 1000;  // how often to run face detection (ms)
+  const DETECTION_INTERVAL = 500;  // how often to run face detection (ms)
   const MATCHING_THROTTLE = 6000;   // minimum time between match attempts (ms) to avoid rapid re-checks
   const MAX_FAILED_ATTEMPTS = 5;    // failed attempts 
 

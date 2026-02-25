@@ -13,7 +13,7 @@
  * in production, this would be replaced with a real database (e.g., mongodb, postgresql).
  */
 const STUDENTS = {
-  '20002547': {
+  '2002547': {
     id: '20002547',
     name: 'John Paul',
     department: 'CCICT',
@@ -28,39 +28,16 @@ const STUDENTS = {
     year: 'Senior',
     faceImage: '/uploads/jungkok.jpg',
     email: 'kevin@university.edu'
-  },
-  '2290794': {
-    id: '2290794',
-    name: 'Dwayt N',
-    department: 'Engineering',
-    year: 'Senior',
-    faceImage: '/uploads/dwayt1.jpg',
-    email: 'dwayt@university.edu'
-  },
-  '2290795': {
-    id: '2290795',
-    name: 'Dwayt N2',
-    department: 'Engineering',
-    year: 'Senior',
-    faceImage: '/uploads/dwayt2.jpg',
-    email: 'dwayt@university.edu'
-  },
-  '2290796': {
-    id: '2290796',
-    name: 'Dwayt ID1',
-    department: 'Engineering',
-    year: 'Senior',
-    faceImage: '/uploads/21.jpg',
-    email: 'dwayt@university.edu'
-  },
-  '2290797': {
-    id: '2290797',
-    name: 'Dwayt ID2',
-    department: 'Engineering',
-    year: 'Senior',
-    faceImage: '/uploads/22.jpg',
-    email: 'dwayt@university.edu'
   }
+};
+
+export const syncStudentsFromServer = async () => {
+  const res = await fetch("/api/students");
+  if (!res.ok) throw new Error("Failed to sync students from server");
+  const data = await res.json();
+
+  // Merge server DB into the local in-memory object
+  Object.assign(STUDENTS, data.students);
 };
 
 /** retrieves a student record by id. returns null if not found. */

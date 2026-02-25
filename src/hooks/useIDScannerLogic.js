@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import * as tf from '@tensorflow/tfjs';
 import * as cocoSsd from '@tensorflow-models/coco-ssd';
 import Tesseract from 'tesseract.js';
-import { getAllValidStudentIDs } from '../services/testDB';
+import { getAllValidStudentIDs, syncStudentsFromServer } from '../services/testDB';
 
 /**
  * useidscannerlogic hook
@@ -39,7 +39,7 @@ const useIDScannerLogic = (videoRef, onIDDetected) => {
   const streamRef = useRef(null);          // mediastream for camera cleanup
 
   // --- configuration ---
-  const SCAN_INTERVAL = 50;  // how often to scan for id cards (ms)
+  const SCAN_INTERVAL = 500;  // how often to scan for id cards (ms)
 
   /**
    * initializes the rear-facing camera at 1280x720 resolution
@@ -372,6 +372,8 @@ const useIDScannerLogic = (videoRef, onIDDetected) => {
       // step 2: load coco-ssd + tesseract models
       const modelsOk = await initModels();
       if (!modelsOk || !isMounted) return;
+
+      await syncStudentsFromServer();
 
       // step 3: all ready
       setIsReady(true);

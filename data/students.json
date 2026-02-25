@@ -1,0 +1,22 @@
+{
+  "2645304": {
+    "id": "2645304",
+    "displayId": "26-4-5304",
+    "name": "Dwight Justin Namuco",
+    "department": "Engineering",
+    "year": "2026",
+    "email": "dwayt@stibacoor.college",
+    "faceImage": "/uploads/2645304.jpg",
+    "createdAt": "2026-02-20T13:52:59.059Z"
+  },
+  "2648885": {
+    "id": "2648885",
+    "displayId": "26-4-8885",
+    "name": "Dwight Justin Namuco",
+    "department": "Senior",
+    "year": "2026",
+    "email": "namuco@iscp.com.ph",
+    "faceImage": "/uploads/2648885.jpg",
+    "createdAt": "2026-02-20T11:29:44.706Z"
+  }
+}
