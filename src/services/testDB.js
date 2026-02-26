@@ -1,84 +1,50 @@
-/**
- * student database (mock/test)
- * 
- * in-memory student records used for id verification.
- * each student has:
- *   - id: unique student id number (string, used as key)
- *   - name: full name
- *   - department: academic department
- *   - year: year level
- *   - faceImage: path to reference face photo (stored in /public/uploads/)
- *   - email: student email address
- * 
- * in production, this would be replaced with a real database (e.g., mongodb, postgresql).
- */
-const STUDENTS = {
-  '2002547': {
-    id: '20002547',
-    name: 'John Paul',
-    department: 'CCICT',
-    year: '4th year',
-    faceImage: '/uploads/mememe.jpg',
-    email: 'john.doe@university.edu'
-  },
-  '2201547': {
-    id: '2201547',
-    name: 'Kevin Durant',
-    department: 'Engineering',
-    year: 'Senior',
-    faceImage: '/uploads/jungkok.jpg',
-    email: 'kevin@university.edu'
-  }
-};
+// src/services/testDB.js
+
+// In-memory cache synced from backend /api/students
+const STUDENTS = {};
+
+const digitsOnly = (s) => String(s ?? '').replace(/\D/g, '');
 
 export const syncStudentsFromServer = async () => {
-  const res = await fetch("/api/students");
-  if (!res.ok) throw new Error("Failed to sync students from server");
+  const res = await fetch('/api/students');
+  if (!res.ok) throw new Error('Failed to sync students from server');
   const data = await res.json();
 
-  // Merge server DB into the local in-memory object
-  Object.assign(STUDENTS, data.students);
+  // Merge server DB into cache + normalize faceImages
+  for (const [id, student] of Object.entries(data.students || {})) {
+    const canonicalId = digitsOnly(id);
+    const faceImages =
+      Array.isArray(student.faceImages) && student.faceImages.length
+        ? student.faceImages
+        : student.faceImage
+          ? [student.faceImage]
+          : [];
+
+    STUDENTS[canonicalId] = { ...student, id: canonicalId, faceImages };
+  }
 };
 
-/** retrieves a student record by id. returns null if not found. */
 export const getStudentByID = (studentId) => {
-  const student = STUDENTS[studentId];
-  if (!student) {
-    console.warn(`Student ID ${studentId} not found in database`);
-    return null;
-  }
-  return student;
+  const canonicalId = digitsOnly(studentId);
+  return STUDENTS[canonicalId] || null;
 };
 
-/** checks if a student id exists in the database */
 export const isValidStudentID = (studentId) => {
-  return studentId in STUDENTS;
+  const canonicalId = digitsOnly(studentId);
+  return canonicalId in STUDENTS;
 };
 
-/** returns an array of all registered student id strings */
-export const getAllValidStudentIDs = () => {
-  return Object.keys(STUDENTS);
-};
+export const getAllValidStudentIDs = () => Object.keys(STUDENTS);
 
-/** returns the face image path for a student, or null if not found */
-export const getFaceImagePath = (studentId) => {
-  const student = STUDENTS[studentId];
-  return student ? student.faceImage : null;
-};
-
-/** adds a new student to the database. requires id, name, and faceimage. */
-export const addStudent = (studentData) => {
-  if (!studentData.id || !studentData.name || !studentData.faceImage) {
-    throw new Error('Missing required student data');
-  }
-  STUDENTS[studentData.id] = studentData;
-  console.log(`Added student: ${studentData.name} (${studentData.id})`);
+export const getFaceImagePaths = (studentId) => {
+  const student = getStudentByID(studentId);
+  return student?.faceImages?.length ? student.faceImages : student?.faceImage ? [student.faceImage] : [];
 };
 
 export default {
+  syncStudentsFromServer,
   getStudentByID,
   isValidStudentID,
   getAllValidStudentIDs,
-  getFaceImagePath,
-  addStudent
+  getFaceImagePaths,
 };

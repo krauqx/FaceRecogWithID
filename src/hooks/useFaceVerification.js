@@ -1,104 +1,90 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import * as faceapi from '@vladmandic/face-api';
 
-/**
- * usefaceverification hook
- * 
- * custom react hook that handles real-time face detection and verification
- * using the @vladmandic/face-api library (tinyfacedetector model).
- * 
- * flow:
- * 1. initialize front-facing camera (640x480)
- * 2. load face-api models (tinyfacedetector, facelandmark68, facerecognition)
- * 3. load reference face descriptor from the student's stored photo
- * 4. run periodic face detection on the live video feed
- * 5. compare detected face descriptor against reference using euclidean distance
- * 6. if similarity >= threshold, trigger onverified callback
- * 
- * @param {React.RefObject} videoRef - reference to the html video element
- * @param {string} referenceFaceImage - url path to the student's reference face image
- * @param {Function} onVerified - callback when face is successfully verified (receives {similarity, confidence})
- * @param {Function} onFailed - callback when face verification fails
- * @returns {Object} hook state: { isReady, error, status, faceDetected, similarityScore, isVerifying, detectionsRef }
- */
-const useFaceVerification = (videoRef, referenceFaceImage, onVerified, onFailed) => {
-  // --- ui state ---
-  const [isReady, setIsReady] = useState(false);           // true when camera + models + reference are all loaded
-  const [error, setError] = useState(null);                 // error message string if initialization fails
-  const [status, setStatus] = useState('Initializing...');  // status text displayed to the user
-  const [faceDetected, setFaceDetected] = useState(false);  // true when a single face is detected in frame
-  const [similarityScore, setSimilarityScore] = useState(null); // latest similarity score (0-1)
-  const [isVerifying, setIsVerifying] = useState(false);    // true during active face comparison
-  const detectionsRef = useRef([]);                          // shared ref for face-api detection results (used by faceverifier canvas)
+const useFaceVerification = (videoRef, referenceFaceImages, onVerified, onFailed) => {
+  // UI state
+  const [isReady, setIsReady] = useState(false);
+  const [error, setError] = useState(null);
+  const [status, setStatus] = useState('Initializing...');
+  const [faceDetected, setFaceDetected] = useState(false);
+  const [similarityScore, setSimilarityScore] = useState(null);
+  const [isVerifying, setIsVerifying] = useState(false);
 
-  // --- internal refs ---
-  const modelsLoadedRef = useRef(false);              // prevents re-loading models on re-render
-  const detectionIntervalRef = useRef(null);          // setinterval id for periodic face detection
-  const referenceDescriptorRef = useRef(null);        // 128-dimensional face descriptor from reference photo
-  const streamRef = useRef(null);                     // mediastream for camera cleanup
-  const hasVerifiedRef = useRef(false);               // prevents duplicate verification callbacks
-  const hasFailedRef = useRef(false);                  // prevents duplicate failure callbacks
-  const failedAttemptsRef = useRef(0);                 // consecutive failed match attempts counter
-  const lastDetectionTimeRef = useRef(Date.now());    // timestamp of last match attempt (for throttling)
+  // Liveness UI (state for UI)
+  const [yawScore, setYawScore] = useState(0);
+  const [passedLeft, setPassedLeft] = useState(false);
+  const [passedRight, setPassedRight] = useState(false);
+  const [livenessPassed, setLivenessPassed] = useState(false);
 
-  // --- configuration ---
-  const MATCH_THRESHOLD = 0.58;     // minimum similarity score to verify (0-1, higher = stricter)
-  const DETECTION_INTERVAL = 500;  // how often to run face detection (ms)
-  const MATCHING_THROTTLE = 6000;   // minimum time between match attempts (ms) to avoid rapid re-checks
-  const MAX_FAILED_ATTEMPTS = 5;    // failed attempts 
-
-  // --- anti-spoofing ---
-  const [yawScore, setYawScore  ] = useState(0);
+  // Liveness refs (used for logic; prevents effect restart loops)
   const passedLeftRef = useRef(false);
   const passedRightRef = useRef(false);
   const livenessPassedRef = useRef(false);
+
+  // For overlay
+  const detectionsRef = useRef([]);
+
+  // Internal refs
+  const modelsLoadedRef = useRef(false);
+  const detectionIntervalRef = useRef(null);
+  const streamRef = useRef(null);
+
+  const referenceDescriptorsRef = useRef([]); // Float32Array[]
+  const failedAttemptsRef = useRef(0);
+  const hasVerifiedRef = useRef(false);
+  const hasFailedRef = useRef(false);
+
+  // Multi-frame batch
+  const batchStartRef = useRef(null);
+  const batchDistancesRef = useRef([]); // number[]
+
+  // --------------------
+  // TUNABLE SETTINGS
+  // --------------------
+  const DISTANCE_THRESHOLD = 0.60;
+  const DETECTION_INTERVAL = 250;
+
+  const MAX_SAMPLES = 12;
+  const REQUIRED_GOOD_FRAMES = 6;
+  const BATCH_TIMEOUT_MS = 2200;
+
+  const MAX_FAILED_ATTEMPTS = 5;
+
+  const TINY_INPUT_SIZE = 320;
+  const SCORE_THRESHOLD = 0.5;
+
   const YAW_THRESHOLD = 70;
-  /**
-   * announces "verification successful" via web speech api
-   * called once when face verification passes
-   */
-  const speakVerification = useCallback(() => {
-    if ('speechSynthesis' in window) {
-      const utterance = new SpeechSynthesisUtterance('Verification Successful');
-      utterance.rate = 1.0;
-      utterance.pitch = 1.0;
-      utterance.volume = 0.8;
-      speechSynthesis.speak(utterance);
-    }
+
+  // --------------------
+  // Helpers
+  // --------------------
+  const clamp01 = (v) => Math.max(0, Math.min(1, v));
+  const distanceToUiSimilarity = (d) => clamp01(1 - d);
+
+  const speak = useCallback((text) => {
+    if (!('speechSynthesis' in window)) return;
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate = 1.0;
+    u.pitch = 1.0;
+    u.volume = 0.8;
+    window.speechSynthesis.speak(u);
   }, []);
 
-  /**
-   * announces "verification failed" via web speech api
-   * called once when face verification fails after max attempts
-   */
-  const speakFailure = useCallback(() => {
-    if ('speechSynthesis' in window) {
-      const utterance = new SpeechSynthesisUtterance('Verification Failed. Face does not match.');
-      utterance.rate = 1.0;
-      utterance.pitch = 1.0;
-      utterance.volume = 0.8;
-      speechSynthesis.speak(utterance);
-    }
-  }, []);
+  const asArray = useCallback(
+    (x) => (Array.isArray(x) ? x.filter(Boolean) : x ? [x] : []),
+    []
+  );
 
-  /**
-   * initializes the front-facing camera at 640x480 resolution
-   * attaches the mediastream to the video element
-   * @returns {boolean} true if camera initialized successfully
-   */
   const initCamera = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: 'user',       // front-facing camera for face verification
-          width: { ideal: 640 },    // 4:3 aspect ratio
-          height: { ideal: 480 }
-        }
+        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
       });
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         streamRef.current = stream;
+
         await new Promise((resolve) => {
           videoRef.current.onloadedmetadata = () => {
             videoRef.current.play();
@@ -114,27 +100,19 @@ const useFaceVerification = (videoRef, referenceFaceImage, onVerified, onFailed)
     }
   }, [videoRef]);
 
-  /**
-   * loads face-api.js neural network models from /public/models/
-   * models used:
-   *   - tinyfacedetector: lightweight face detection (~190kb)
-   *   - facelandmark68net: 68-point facial landmark detection
-   *   - facerecognitionnet: generates 128-dimensional face descriptors
-   * @returns {boolean} true if models loaded successfully
-   */
   const loadModels = useCallback(async () => {
-    if (modelsLoadedRef.current) return true; // skip if already loaded
-
+    if (modelsLoadedRef.current) return true;
     try {
       setStatus('Loading face recognition models...');
       const modelPath = `${window.location.origin}/models`;
-      
+
+      if (faceapi?.tf?.ready) await faceapi.tf.ready();
+
       await faceapi.nets.tinyFaceDetector.loadFromUri(modelPath);
       await faceapi.nets.faceLandmark68Net.loadFromUri(modelPath);
       await faceapi.nets.faceRecognitionNet.loadFromUri(modelPath);
 
       modelsLoadedRef.current = true;
-      console.log('Face models loaded');
       return true;
     } catch (err) {
       console.error('Model loading error:', err);
@@ -143,369 +121,297 @@ const useFaceVerification = (videoRef, referenceFaceImage, onVerified, onFailed)
     }
   }, []);
 
-  /**
-   * loads the student's reference face image and extracts its 128-dimensional descriptor
-   * the descriptor is stored in referencedescriptorref for comparison during live detection
-   * cache-busting query param (?t=timestamp) ensures fresh image load
-   * @returns {boolean} true if reference descriptor was extracted successfully
-   */
-  const loadReferenceDescriptor = useCallback(async () => {
-    try {
-      setStatus('Loading reference face...');
-      
-      // load reference image with cache-busting
-      const img = await new Promise((resolve, reject) => {
-        const image = new Image();
-        image.crossOrigin = 'anonymous';
-        image.onload = () => resolve(image);
-        image.onerror = () => reject(new Error('Failed to load reference image'));
-        image.src = referenceFaceImage + '?t=' + Date.now();
-      });
+  // ✅ Memoized detectors (stops startFaceDetection from changing every render)
+  const detectAll = useCallback(async (input) => {
+    return faceapi
+      .detectAllFaces(
+        input,
+        new faceapi.TinyFaceDetectorOptions({
+          inputSize: TINY_INPUT_SIZE,
+          scoreThreshold: SCORE_THRESHOLD,
+        })
+      )
+      .withFaceLandmarks()
+      .withFaceDescriptors();
+  }, [TINY_INPUT_SIZE, SCORE_THRESHOLD]);
 
-      // detect face in reference image and extract 128-dimensional descriptor
-      const detection = await faceapi
-        .detectSingleFace(
-          img,
-          new faceapi.TinyFaceDetectorOptions({ 
-            inputSize: 160,         // input resolution for detector (smaller = faster)
-            scoreThreshold: 0.5     // minimum confidence to consider a detection valid
-          })
-        )
-        .withFaceLandmarks()        // detect 68 facial landmark points
-        .withFaceDescriptor();      // generate 128-dimensional face descriptor vector
+  const detectSingle = useCallback(async (imgEl) => {
+    return faceapi
+      .detectSingleFace(
+        imgEl,
+        new faceapi.TinyFaceDetectorOptions({
+          inputSize: TINY_INPUT_SIZE,
+          scoreThreshold: SCORE_THRESHOLD,
+        })
+      )
+      .withFaceLandmarks()
+      .withFaceDescriptor();
+  }, [TINY_INPUT_SIZE, SCORE_THRESHOLD]);
 
-      if (!detection) {
-        throw new Error('No face found in reference image');
-      }
-
-      // store descriptor as regular array for euclidean distance calculation
-      referenceDescriptorRef.current = Array.from(detection.descriptor);
-      console.log('Reference face loaded');
-      return true;
-    } catch (err) {
-      console.error('Reference loading error:', err);
-      setError('Failed to load reference face image');
-      return false;
-    }
-  }, [referenceFaceImage]);
-
-  /**
-   * calculates face similarity using euclidean distance
-   * 
-   * formula: distance = sqrt( sum( (a[i] - b[i])^2 ) ) for all 128 dimensions
-   * similarity = max(0, 1 - distance)
-   * 
-   * typical distance ranges for face-api descriptors:
-   *   - same person:      0.2 - 0.4 (similarity 60-80%)
-   *   - different person:  0.6 - 1.0+ (similarity 0-40%)
-   * 
-   * @param {number[]} a - 128-dimensional descriptor of face a
-   * @param {number[]} b - 128-dimensional descriptor of face b
-   * @returns {number} similarity score between 0 and 1
-   */
-  const faceSimilarity = (a, b) => {
-    if (!a || !b || a.length !== b.length) return 0;
-    
-    // calculate euclidean distance between two 128-dimensional face descriptors
-    let sum = 0;
-    for (let i = 0; i < a.length; i++) {
-      const diff = a[i] - b[i];
-      sum += diff * diff;
-    }
-    const distance = Math.sqrt(sum);
-    
-    // convert distance to similarity (0-1 range, higher = more similar)
-    const similarity = Math.max(0, 1 - distance);
-    
-    console.log('Euclidean distance:', distance.toFixed(4), 'Similarity:', similarity.toFixed(4));
-    return similarity;
-  };
-
-  /**
-   * validates face detection quality before attempting a match
-   * checks:
-   *   1. detection confidence score >= 0.5
-   *   2. face is horizontally centered (within 35% of video center)
-   *   3. face size is between 15-85% of video width (not too far/close)
-   * 
-   * @param {Object} detection - face-api detection result with .detection.box and .detection.score
-   * @returns {boolean} true if face quality is sufficient for matching
-   */
-  const checkFaceQuality = (detection) => {
-    if (!videoRef.current) return false;
-    if (detection.detection.score < 0.5) return false; // low confidence detection
-
-    const faceBox = detection.detection.box;
-    const videoCenter = videoRef.current.videoWidth / 2;
-    const faceCenter = faceBox.x + (faceBox.width / 2);
-    const maxOffset = videoRef.current.videoWidth * 0.35; // 35% tolerance from center
-    
-    if (Math.abs(faceCenter - videoCenter) > maxOffset) return false; // face too far off-center
-
-    const minSize = videoRef.current.videoWidth * 0.15; // face too small (too far away)
-    const maxSize = videoRef.current.videoWidth * 0.85; // face too large (too close)
-    if (faceBox.width < minSize || faceBox.width > maxSize) return false;
-
-    return true;
-  };
-
-  /**
-   * Estimate yaw from 2D landmarks using nose vs eye distances.
-   * Returns an approximate yaw score in [-100..100].
-   * Negative = head turned to user's right, Positive = head turned to user's left.
-   */
-  const estimateYawScore = (landmarks) => {
+  const estimateYawScore = useCallback((landmarks) => {
     if (!landmarks) return 0;
-
-    // face-api 68 landmarks indices:
-    // nose tip ~ 30, left eye outer corner ~ 36, right eye outer corner ~ 45
     const pts = landmarks.positions;
-
     const nose = pts[30];
     const leftEye = pts[36];
     const rightEye = pts[45];
 
-    const dist = (a, b) => {
-      const dx = a.x - b.x;
-      const dy = a.y - b.y;
-      return Math.sqrt(dx * dx + dy * dy);
-    };
+    const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
     const dLeft = dist(nose, leftEye);
     const dRight = dist(nose, rightEye);
     const eyeDist = dist(leftEye, rightEye);
-
     if (eyeDist < 1) return 0;
 
-    // ratio in roughly [-1..1], depending on turn
     const ratio = (dLeft - dRight) / eyeDist;
+    const gain = 250;
+    return Math.max(-100, Math.min(100, ratio * gain));
+  }, []);
 
-    // map ratio to [-100..100] with a gain; tweak gain for your camera/setup
-    const gain = 250; // start here; adjust until "good" turns reach near +-100
-    let score = ratio * gain;
+  const loadReferenceDescriptors = useCallback(async () => {
+    try {
+      setStatus('Loading reference face(s)...');
+      const imgs = asArray(referenceFaceImages);
+      if (!imgs.length) throw new Error('No reference images provided');
 
-    // clamp to [-100..100]
-    score = Math.max(-100, Math.min(100, score));
+      const descs = [];
+      for (const src of imgs) {
+        const imgEl = await new Promise((resolve, reject) => {
+          const image = new Image();
+          image.crossOrigin = 'anonymous';
+          image.onload = () => resolve(image);
+          image.onerror = () => reject(new Error(`Failed to load: ${src}`));
+          image.src = `${src}?t=${Date.now()}`;
+        });
 
-    // IMPORTANT: direction check
-    // If you find it inverted on your device, swap sign: score = -score;
-    return score;
-  };
-
-  /**
-   * starts the periodic face detection loop
-   * runs every DETECTION_INTERVAL ms, detects faces in the video feed,
-   * and compares against the reference descriptor when MATCHING_THROTTLE allows
-   * 
-   * detection results:
-   *   - 0 faces: show "please look at the camera"
-   *   - 1 face: attempt match if quality check passes and throttle allows
-   *   - 2+ faces: show "multiple faces detected" error
-   */
-  const startFaceDetection = useCallback(() => {
-    if (!videoRef.current || !referenceDescriptorRef.current) return;
-
-    setStatus('Looking for face...');
-    hasVerifiedRef.current = false;
-    hasFailedRef.current = false;
-    failedAttemptsRef.current = 0;
-    // for anti-spoofing
-    lastDetectionTimeRef.current = 0;
-    passedLeftRef.current = false;
-    passedRightRef.current = false;
-    livenessPassedRef.current = false;
-    setYawScore(0);
-
-    // run face detection at regular intervals
-    detectionIntervalRef.current = setInterval(async () => {
-      if (!videoRef.current || hasVerifiedRef.current || hasFailedRef.current) return; // skip if unmounted, already verified, or already failed
-
-      try {
-        // detect all faces in current video frame with landmarks and descriptors
-        const detections = await faceapi
-          .detectAllFaces(
-            videoRef.current,
-            new faceapi.TinyFaceDetectorOptions({
-              inputSize: 160,         // smaller = faster, larger = more accurate
-              scoreThreshold: 0.5     // minimum detection confidence
-            })
-          )
-          .withFaceLandmarks()        // 68-point facial landmarks
-          .withFaceDescriptors();     // 128-dimensional face descriptor for each face
-
-
-        const now = Date.now();
-        // only attempt matching if enough time has passed since last attempt
-        const shouldMatch = (now - lastDetectionTimeRef.current >= MATCHING_THROTTLE);
-
-        if (detections.length === 0) {
-          // no face found in frame
-          setFaceDetected(false);
-          setStatus('Please look at the camera');
-          setSimilarityScore(null);
-        } else if (detections.length === 1) {
-          // single face detected - update roi ref for canvas drawing
-          setFaceDetected(true);
-          detectionsRef.current = detections; // shared with faceverifier component for roi visualization
-          console.log('DETECTIONS SET:', detections.length, 'box:', detections[0].detection.box);
-          const detection = detections[0];
-
-           // --- LIVENESS CHECK: require head turn left & right before matching
-          const yaw = estimateYawScore(detection.landmarks);
-          setYawScore(yaw);
-
-          if (!livenessPassedRef.current) {
-            if (yaw >= YAW_THRESHOLD) passedLeftRef.current = true;
-            if (yaw <= -YAW_THRESHOLD) passedRightRef.current = true;
-
-            if (passedLeftRef.current && passedRightRef.current) {
-              livenessPassedRef.current = true;
-              setStatus('Liveness OK. Hold still for verification...');
-            } else {
-              // Prompt user what to do next
-              if (!passedLeftRef.current && !passedRightRef.current) {
-                setStatus('Turn your head LEFT then RIGHT');
-              } else if (!passedLeftRef.current) {
-                setStatus('Now turn your head LEFT');
-              } else if (!passedRightRef.current) {
-                setStatus('Now turn your head RIGHT');
-              }
-
-              // Don’t proceed to matching yet
-              setSimilarityScore(null);
-              setIsVerifying(false);
-              return;
-            }
-          }
-
-          if (checkFaceQuality(detection) && shouldMatch) {
-            lastDetectionTimeRef.current = now; // reset throttle timer
-            setIsVerifying(true);
-            setStatus('Verifying face...');
-
-            // extract descriptor and compare with reference using euclidean distance
-            const currentDescriptor = Array.from(detection.descriptor);
-            const similarity = faceSimilarity(
-              currentDescriptor,
-              referenceDescriptorRef.current
-            );
-
-            setSimilarityScore(similarity);
-            console.log('Match score:', (similarity * 100).toFixed(1) + '%');
-
-            if (similarity >= MATCH_THRESHOLD && !hasVerifiedRef.current) {
-              // match found - face verified successfully
-              console.log('FACE VERIFIED!');
-              hasVerifiedRef.current = true;  // prevent duplicate callbacks
-              failedAttemptsRef.current = 0;  // reset failed counter
-              speakVerification();             // audio announcement
-              
-              // stop detection loop
-              if (detectionIntervalRef.current) {
-                clearInterval(detectionIntervalRef.current);
-                detectionIntervalRef.current = null;
-              }
-
-              // notify parent component with match results
-              onVerified({
-                similarity,
-                confidence: detection.detection.score
-              });
-            } else if (similarity < MATCH_THRESHOLD) {
-              // no match - face doesn't match reference
-              failedAttemptsRef.current++;
-              const attemptsLeft = MAX_FAILED_ATTEMPTS - failedAttemptsRef.current;
-              console.log(`Failed attempt ${failedAttemptsRef.current}/${MAX_FAILED_ATTEMPTS}`);
-
-              if (failedAttemptsRef.current >= MAX_FAILED_ATTEMPTS && !hasFailedRef.current) {
-                // max failed attempts reached - trigger failure
-                console.log('FACE VERIFICATION FAILED - max attempts reached');
-                hasFailedRef.current = true;
-                speakFailure();
-
-                // stop detection loop
-                if (detectionIntervalRef.current) {
-                  clearInterval(detectionIntervalRef.current);
-                  detectionIntervalRef.current = null;
-                }
-
-                // notify parent component of failure
-                onFailed('Face does not match the registered student');
-              } else {
-                setStatus(`No match (${(similarity * 100).toFixed(1)}%) - attempt ${failedAttemptsRef.current}/${MAX_FAILED_ATTEMPTS}`);
-              }
-            }
-
-            setIsVerifying(false);
-          } else {
-            if (livenessPassedRef.current) setStatus('Position face in center');
-            // changed for liveness
-          }
-        } else {
-          // multiple faces detected - security measure, only allow one person
-          setFaceDetected(false);
-          detectionsRef.current = [];
-          setStatus('Multiple faces detected. Only one person allowed.');
-        }
-      } catch (err) {
-        console.error('Detection error:', err);
+        const det = await detectSingle(imgEl);
+        if (!det) continue;
+        descs.push(det.descriptor);
       }
-    }, DETECTION_INTERVAL);
-  }, [videoRef, onVerified, onFailed]);
 
-  /** stops the face detection interval loop */
-  const stopDetection = useCallback(() => {
+      if (!descs.length) throw new Error('No face found in any reference image');
+      referenceDescriptorsRef.current = descs;
+      return true;
+    } catch (err) {
+      console.error(err);
+      setError('Failed to load reference face image(s)');
+      return false;
+    }
+  }, [referenceFaceImages, asArray, detectSingle]);
+
+  const minDistanceToRefs = useCallback((liveDescriptor) => {
+    let minDist = Number.POSITIVE_INFINITY;
+    for (const ref of referenceDescriptorsRef.current) {
+      const d = faceapi.euclideanDistance(liveDescriptor, ref);
+      if (d < minDist) minDist = d;
+    }
+    return minDist;
+  }, []);
+
+  const resetBatch = useCallback(() => {
+    batchStartRef.current = null;
+    batchDistancesRef.current = [];
+    setIsVerifying(false);
+  }, []);
+
+  const decideBatch = useCallback(() => {
+    const arr = batchDistancesRef.current.slice().sort((a, b) => a - b);
+    if (!arr.length) return { pass: false, median: null, good: 0, total: 0 };
+
+    const median = arr[Math.floor(arr.length / 2)];
+    const good = arr.filter((d) => d <= DISTANCE_THRESHOLD).length;
+
+    return {
+      pass: median <= DISTANCE_THRESHOLD && good >= REQUIRED_GOOD_FRAMES,
+      median,
+      good,
+      total: arr.length,
+    };
+  }, [DISTANCE_THRESHOLD, REQUIRED_GOOD_FRAMES]);
+
+  const stop = useCallback(() => {
     if (detectionIntervalRef.current) {
       clearInterval(detectionIntervalRef.current);
       detectionIntervalRef.current = null;
     }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
   }, []);
 
-  /**
-   * initialization effect - runs once on mount
-   * sequential setup: camera -> models -> reference descriptor -> start detection
-   * cleanup: stops detection interval and releases camera stream
-   */
+  const startFaceDetection = useCallback(() => {
+    if (!videoRef.current || !referenceDescriptorsRef.current.length) return;
+
+    // ✅ Prevent starting multiple intervals
+    if (detectionIntervalRef.current) return;
+
+    hasVerifiedRef.current = false;
+    hasFailedRef.current = false;
+    failedAttemptsRef.current = 0;
+
+    // Reset liveness state + refs
+    passedLeftRef.current = false;
+    passedRightRef.current = false;
+    livenessPassedRef.current = false;
+
+    setPassedLeft(false);
+    setPassedRight(false);
+    setLivenessPassed(false);
+    setYawScore(0);
+
+    resetBatch();
+    setStatus('Looking for face...');
+
+    detectionIntervalRef.current = setInterval(async () => {
+      const video = videoRef.current;
+      if (!video || hasVerifiedRef.current || hasFailedRef.current) return;
+
+      try {
+        const detections = await detectAll(video);
+        detectionsRef.current = detections;
+
+        if (detections.length === 0) {
+          setFaceDetected(false);
+          setSimilarityScore(null);
+          setStatus('Please look at the camera');
+          resetBatch();
+          return;
+        }
+
+        if (detections.length > 1) {
+          setFaceDetected(false);
+          setSimilarityScore(null);
+          setStatus('Multiple faces detected — one person only');
+          resetBatch();
+          return;
+        }
+
+        const det = detections[0];
+        setFaceDetected(true);
+
+        // Liveness first
+        const yaw = estimateYawScore(det.landmarks);
+        setYawScore(yaw);
+
+        if (!livenessPassedRef.current) {
+          if (yaw >= YAW_THRESHOLD && !passedLeftRef.current) {
+            passedLeftRef.current = true;
+            setPassedLeft(true);
+          }
+          if (yaw <= -YAW_THRESHOLD && !passedRightRef.current) {
+            passedRightRef.current = true;
+            setPassedRight(true);
+          }
+
+          const leftOk = passedLeftRef.current || yaw >= YAW_THRESHOLD;
+          const rightOk = passedRightRef.current || yaw <= -YAW_THRESHOLD;
+
+          if (leftOk && rightOk) {
+            livenessPassedRef.current = true;
+            setLivenessPassed(true);
+            setStatus('Liveness OK. Hold still...');
+          } else {
+            setStatus('Liveness: turn RIGHT then LEFT');
+          }
+
+          setSimilarityScore(null);
+          resetBatch();
+          return;
+        }
+
+        // Begin / continue multi-frame batch
+        const now = Date.now();
+        if (!batchStartRef.current) {
+          batchStartRef.current = now;
+          batchDistancesRef.current = [];
+          setIsVerifying(true);
+          setStatus('Verifying... hold still');
+        }
+
+        const dist = minDistanceToRefs(det.descriptor);
+        const uiSim = distanceToUiSimilarity(dist);
+        setSimilarityScore(uiSim);
+
+        if (Number.isFinite(dist) && dist > 0 && dist < 2.0) {
+          batchDistancesRef.current.push(dist);
+        }
+
+        const enough = batchDistancesRef.current.length >= MAX_SAMPLES;
+        const timeout = now - batchStartRef.current >= BATCH_TIMEOUT_MS;
+
+        if (enough || timeout) {
+          const result = decideBatch();
+          resetBatch();
+
+          if (result.pass) {
+            hasVerifiedRef.current = true;
+            setStatus('Verified ✅');
+            speak('Verification Successful');
+            onVerified?.({
+              similarity: distanceToUiSimilarity(result.median),
+              confidence: det.detection.score,
+            });
+            return;
+          }
+
+          failedAttemptsRef.current += 1;
+          const left = MAX_FAILED_ATTEMPTS - failedAttemptsRef.current;
+
+          if (failedAttemptsRef.current >= MAX_FAILED_ATTEMPTS) {
+            hasFailedRef.current = true;
+            setStatus('Verification failed');
+            speak('Verification Failed. Face does not match.');
+            onFailed?.('Face verification failed: exceeded max attempts');
+            return;
+          }
+
+          setStatus(`Not a match yet — try again (${Math.max(0, left)} left)`);
+        }
+      } catch (e) {
+        console.error('Detection loop error:', e);
+      }
+    }, DETECTION_INTERVAL);
+  }, [
+    videoRef,
+    detectAll,
+    estimateYawScore,
+    minDistanceToRefs,
+    decideBatch,
+    resetBatch,
+    onVerified,
+    onFailed,
+    speak,
+    DETECTION_INTERVAL,
+    MAX_SAMPLES,
+    BATCH_TIMEOUT_MS,
+    MAX_FAILED_ATTEMPTS,
+    YAW_THRESHOLD,
+  ]);
+
   useEffect(() => {
-    let isMounted = true; // prevents state updates after unmount
+    let mounted = true;
 
-    const init = async () => {
-      // step 1: initialize camera
-      const cameraOk = await initCamera();
-      if (!cameraOk || !isMounted) return;
+    (async () => {
+      const camOk = await initCamera();
+      if (!camOk || !mounted) return;
 
-      // step 2: load face-api models
       const modelsOk = await loadModels();
-      if (!modelsOk || !isMounted) return;
+      if (!modelsOk || !mounted) return;
 
-      // step 3: load reference face descriptor from student photo
-      const refOk = await loadReferenceDescriptor();
-      if (!refOk || !isMounted) return;
+      const refOk = await loadReferenceDescriptors();
+      if (!refOk || !mounted) return;
 
-      // step 4: all ready - start face detection after brief delay
       setIsReady(true);
       setStatus('Ready - Look at camera');
-      
-      setTimeout(() => {
-        if (isMounted) startFaceDetection();
-      }, 500);
-    };
+      startFaceDetection();
+    })();
 
-    init();
-
-    // cleanup on unmount
     return () => {
-      isMounted = false;
-      stopDetection();
-      
-      // release camera stream
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-      }
+      mounted = false;
+      stop();
     };
-  }, [initCamera, loadModels, loadReferenceDescriptor, startFaceDetection, stopDetection]);
+  }, [initCamera, loadModels, loadReferenceDescriptors, startFaceDetection, stop]);
 
-  // expose state and refs to the consuming component (faceverifier)
   return {
     isReady,
     error,
@@ -515,11 +421,11 @@ const useFaceVerification = (videoRef, referenceFaceImage, onVerified, onFailed)
     isVerifying,
     detectionsRef,
 
-    // anti-spoofing
+    // liveness UI
     yawScore,
-    passedLeft: passedLeftRef.current,
-    passedRight: passedRightRef.current,
-    livenessPassed: livenessPassedRef.current,
+    passedLeft,
+    passedRight,
+    livenessPassed,
   };
 };
 

@@ -24,6 +24,18 @@ const SuccessScreen = ({ studentData, verificationResult, onReset }) => {
     const audio = new Audio('/success.mp3');
     audio.play().catch(() => {});
   }, []);
+  //writeintologfileherehrerheur
+  useEffect(() => {
+  fetch("/api/log-success", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      event: "verification_success",
+      studentData,
+      verificationResult,
+    }),
+  }).catch(() => {});
+}, [studentData, verificationResult]);
 
   /** formats iso timestamp to readable time (e.g., "02:30:45 pm") */
   const formatTime = (timestamp) => {

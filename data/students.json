@@ -7,16 +7,43 @@
     "year": "2026",
     "email": "dwayt@stibacoor.college",
     "faceImage": "/uploads/2645304.jpg",
+    "faceImages": [
+      "/uploads/2645304.jpg",
+      "/uploads/2645304_2.jpg",
+      "/uploads/2645304_3.jpg",
+      "/uploads/2645304_4.jpg",
+      "/uploads/2645304_5.jpg",
+      "/uploads/2645304_6.jpg",
+      "/uploads/2645304_7.jpg",
+      "/uploads/2645304_8.jpg",
+      "/uploads/2645304_9.jpg",
+      "/uploads/2645304_10.jpg",
+      "/uploads/2645304_11.jpg",
+      "/uploads/2645304_12.jpg",
+      "/uploads/2645304_13.jpg",
+      "/uploads/2645304_14.jpg",
+      "/uploads/2645304_15.jpg",
+      "/uploads/2645304_16.jpg",
+      "/uploads/2645304_17.jpg",
+      "/uploads/2645304_18.jpg",
+      "/uploads/2645304_19.jpg",
+      "/uploads/2645304_20.jpg",
+      "/uploads/2645304_21.jpg",
+      "/uploads/2645304_22.jpg"
+    ],
     "createdAt": "2026-02-20T13:52:59.059Z"
   },
-  "2648885": {
-    "id": "2648885",
-    "displayId": "26-4-8885",
-    "name": "Dwight Justin Namuco",
-    "department": "Senior",
+  "2645301": {
+    "id": "2645301",
+    "displayId": "26-4-5301",
+    "name": "John Paul",
+    "department": "Engineering",
     "year": "2026",
-    "email": "namuco@iscp.com.ph",
-    "faceImage": "/uploads/2648885.jpg",
-    "createdAt": "2026-02-20T11:29:44.706Z"
+    "email": "dwayt@stibacoor.college",
+    "faceImage": "/uploads/mememe.jpg",
+    "faceImages": [
+      "/uploads/mememe.jpg"
+    ],
+    "createdAt": "2026-02-20T13:52:59.059Z"
   }
 }

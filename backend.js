@@ -8,7 +8,6 @@ import cors from 'cors';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
 const app = express();
 
 // CORS Configuration
@@ -25,9 +24,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Create uploads directory if it doesn't exist
 const uploadDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadDir)){
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 // --- simple JSON DB (persistent) ---
 const dataDir = path.join(__dirname, 'data');
@@ -36,7 +33,6 @@ const studentsFile = path.join(dataDir, 'students.json');
 const ensureDb = async () => {
   if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
   if (!fs.existsSync(studentsFile)) {
-    // seed empty; you can seed your current testDB entries if you want
     await fs.promises.writeFile(studentsFile, JSON.stringify({}, null, 2), 'utf8');
   }
 };
@@ -65,31 +61,30 @@ const formatDisplayId = (id7) => {
 
 const generateUniqueId = (entryYear, students) => {
   const yy = pad2(Number(entryYear) % 100);
-
-  // ensure IDNo (last 4 digits) is globally unique
-  const usedIdNos = new Set(
-    Object.values(students).map((s) => digitsOnly(s.id).slice(-4))
-  );
+  const usedIdNos = new Set(Object.values(students).map((s) => digitsOnly(s.id).slice(-4)));
 
   for (let i = 0; i < 10000; i++) {
     const idNo = pad4(Math.floor(Math.random() * 10000));
     if (usedIdNos.has(idNo)) continue;
 
-    const id = `${yy}4${idNo}`; // canonical digits-only for OCR
+    const id = `${yy}4${idNo}`;
     if (students[id]) continue;
-
     return { id, displayId: `${yy}-4-${idNo}` };
   }
-
   throw new Error('ID space exhausted: cannot generate a unique 4-digit IDNo.');
 };
+
+// Multer: allow single or multiple images
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 500 * 1024 }, // 500KB
+  limits: {
+    fileSize: 500 * 1024, // 500KB per file
+    files: 10,
+  },
   fileFilter: (req, file, cb) => {
     if (/^image\/(jpeg|png|webp)$/.test(file.mimetype)) return cb(null, true);
     cb(new Error('Invalid file type. Use JPEG, PNG, or WebP.'));
-  }
+  },
 });
 
 // Serve static files
@@ -100,10 +95,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.get('/api/uploads', async (req, res) => {
   try {
     const files = await fs.promises.readdir(uploadDir);
-    // basic image filter
-    const imageFiles = files.filter((f) =>
-      /\.(jpe?g|png|webp)$/i.test(f)
-    );
+    const imageFiles = files.filter((f) => /\.(jpe?g|png|webp)$/i.test(f));
     res.json({ files: imageFiles });
   } catch (err) {
     console.error('Error reading uploads directory:', err);
@@ -131,7 +123,7 @@ app.get('/api/students/ids', async (req, res) => {
   }
 });
 
-// Generate ID without saving (frontend calls this when user clicks "Generate ID")
+// Generate ID without saving
 app.post('/api/students/generate-id', async (req, res) => {
   try {
     const { year } = req.body || {};
@@ -146,93 +138,152 @@ app.post('/api/students/generate-id', async (req, res) => {
   }
 });
 
-// Register student + upload face photo
-app.post('/api/students/register', upload.single('photo'), async (req, res) => {
-  try {
-    const { name, department, year, email, id } = req.body || {};
-    if (!name || !department || !year || !email) {
-      return res.status(400).json({ error: 'Missing required fields.' });
-    }
-    if (!req.file) {
-      return res.status(400).json({ error: 'Missing photo upload.' });
-    }
+/**
+ * Register student + upload face photo(s)
+ * Supports:
+ * - legacy: field "photo" (single)
+ * - new: field "photos" (multiple)
+ */
+app.post(
+  '/api/students/register',
+  upload.fields([
+    { name: 'photo', maxCount: 1 },
+    { name: 'photos', maxCount: 10 },
+  ]),
+  async (req, res) => {
+    try {
+      const { name, department, year, email, id } = req.body || {};
+      if (!name || !department || !year || !email) {
+        return res.status(400).json({ error: 'Missing required fields.' });
+      }
 
+      const students = await readStudents();
+
+      let canonicalId = digitsOnly(id);
+      if (!canonicalId) canonicalId = generateUniqueId(Number(year), students).id;
+
+      if (!/^\d{7}$/.test(canonicalId)) {
+        return res.status(400).json({ error: 'Invalid ID. Expected 7 digits (YY4####).' });
+      }
+
+      // Enforce IDNo uniqueness (last 4 digits)
+      const idNo = canonicalId.slice(-4);
+      const usedIdNos = new Set(Object.values(students).map((s) => digitsOnly(s.id).slice(-4)));
+      if (usedIdNos.has(idNo)) {
+        return res.status(409).json({ error: 'Duplicate IDNo detected. Generate again.' });
+      }
+      if (students[canonicalId]) {
+        return res.status(409).json({ error: 'Student ID already exists.' });
+      }
+
+      const files =
+        (req.files?.photos && req.files.photos.length ? req.files.photos : null) ||
+        (req.files?.photo && req.files.photo.length ? req.files.photo : null);
+
+      if (!files || !files.length) {
+        return res.status(400).json({ error: 'Missing photo upload.' });
+      }
+
+      const savedPaths = [];
+
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        const ext =
+          f.mimetype === 'image/png' ? 'png' : f.mimetype === 'image/webp' ? 'webp' : 'jpg';
+
+        const filename = i === 0 ? `${canonicalId}.${ext}` : `${canonicalId}_${i + 1}.${ext}`;
+        const filePath = path.join(uploadDir, filename);
+
+        await fs.promises.writeFile(filePath, f.buffer);
+        savedPaths.push(`/uploads/${filename}`);
+      }
+
+      const student = {
+        id: canonicalId,
+        displayId: formatDisplayId(canonicalId),
+        name: String(name),
+        department: String(department),
+        year: String(year),
+        email: String(email),
+        faceImage: savedPaths[0],       // keep legacy field
+        faceImages: savedPaths,         // NEW
+        createdAt: new Date().toISOString(),
+      };
+
+      students[canonicalId] = student;
+      await writeStudents(students);
+
+      return res.json({ success: true, student });
+    } catch (e) {
+      const msg = e?.message || 'Registration failed';
+      const isSize = msg.toLowerCase().includes('file too large');
+      return res.status(isSize ? 413 : 400).json({ error: msg });
+    }
+  }
+);
+
+/**
+ * Add more face photos to an existing student (recommended for accuracy)
+ * POST /api/students/:id/add-photos  (field: photos[])
+ */
+app.post('/api/students/:id/add-photos', upload.array('photos', 10), async (req, res) => {
+  try {
+    const canonicalId = digitsOnly(req.params.id);
     const students = await readStudents();
 
-    // Canonical digits-only ID (7 digits: YY4####)
-    let canonicalId = digitsOnly(id);
-
-    // If frontend didn’t send id, generate one from year
-    if (!canonicalId) {
-      canonicalId = generateUniqueId(Number(year), students).id;
+    if (!students[canonicalId]) {
+      return res.status(404).json({ error: 'Student not found.' });
+    }
+    if (!req.files?.length) {
+      return res.status(400).json({ error: 'Missing photos upload.' });
     }
 
-    // Validate canonical ID shape if you want strictness:
-    if (!/^\d{7}$/.test(canonicalId)) {
-      return res.status(400).json({ error: 'Invalid ID. Expected 7 digits (YY4####).' });
+    const current = students[canonicalId];
+    const currentImages = Array.isArray(current.faceImages) && current.faceImages.length
+      ? current.faceImages
+      : current.faceImage
+        ? [current.faceImage]
+        : [];
+
+    let startIndex = currentImages.length + 1; // next suffix
+
+    const newPaths = [];
+    for (let i = 0; i < req.files.length; i++) {
+      const f = req.files[i];
+      const ext =
+        f.mimetype === 'image/png' ? 'png' : f.mimetype === 'image/webp' ? 'webp' : 'jpg';
+
+      const filename = `${canonicalId}_${startIndex + i}.${ext}`;
+      const filePath = path.join(uploadDir, filename);
+
+      await fs.promises.writeFile(filePath, f.buffer);
+      newPaths.push(`/uploads/${filename}`);
     }
 
-    // Enforce IDNo uniqueness (last 4 digits)
-    const idNo = canonicalId.slice(-4);
-    const usedIdNos = new Set(
-      Object.values(students).map((s) => digitsOnly(s.id).slice(-4))
-    );
-    if (usedIdNos.has(idNo)) {
-      return res.status(409).json({ error: 'Duplicate IDNo detected. Generate again.' });
-    }
+    const updatedImages = [...currentImages, ...newPaths];
 
-    if (students[canonicalId]) {
-      return res.status(409).json({ error: 'Student ID already exists.' });
-    }
-
-    // Save photo to uploads/ with deterministic filename
-    const ext = req.file.mimetype === 'image/png'
-      ? 'png'
-      : req.file.mimetype === 'image/webp'
-      ? 'webp'
-      : 'jpg';
-
-    const filename = `${canonicalId}.${ext}`;
-    const filePath = path.join(uploadDir, filename);
-    await fs.promises.writeFile(filePath, req.file.buffer);
-
-    const student = {
-      id: canonicalId,
-      displayId: formatDisplayId(canonicalId), // YY-4-####
-      name: String(name),
-      department: String(department),
-      year: String(year),
-      email: String(email),
-      faceImage: `/uploads/${filename}`,
-      createdAt: new Date().toISOString(),
+    students[canonicalId] = {
+      ...current,
+      faceImage: updatedImages[0],
+      faceImages: updatedImages,
+      updatedAt: new Date().toISOString(),
     };
 
-    students[canonicalId] = student;
     await writeStudents(students);
 
-    return res.json({ success: true, student });
+    return res.json({ success: true, student: students[canonicalId] });
   } catch (e) {
-    // Multer size/type errors often land here
-    const msg = e?.message || 'Registration failed';
-    const isSize = msg.toLowerCase().includes('file too large');
-    return res.status(isSize ? 413 : 400).json({ error: msg });
+    return res.status(400).json({ error: e?.message || 'Failed to add photos' });
   }
 });
 
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(500).json({
-    success: false,
-    message: 'Internal server error',
-    error: err.message
-  });
+  res.status(500).json({ success: false, message: 'Internal server error', error: err.message });
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
-
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
 export default app;

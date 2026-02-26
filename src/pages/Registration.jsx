@@ -95,6 +95,8 @@ export default function Registration() {
     try {
       setBusy(true);
       const fd = new FormData();
+      // ...other fields...
+      files.forEach((f) => fd.append("photos", f)); // IMPORTANT: "photos"
       fd.append("name", name);
       fd.append("department", department);
       fd.append("year", String(year));
@@ -229,10 +231,14 @@ export default function Registration() {
           <div>
             <label className="text-sm text-slate-200">1x1 Face Photo (max 500KB)</label>
             <input
-              className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-700 p-3"
               type="file"
               accept="image/jpeg,image/png,image/webp"
-              onChange={(e) => onPickPhoto(e.target.files?.[0])}
+              multiple
+              onChange={(e) => {
+                const files = Array.from(e.target.files || []);
+                // You can keep your validation logic; validate each file size/type
+                // Store them in state (e.g. setPhotos(files))
+              }}
             />
             {previewUrl && (
               <div className="mt-3 flex items-center gap-3">

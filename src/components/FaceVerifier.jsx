@@ -1,4 +1,4 @@
-  import React, { useRef, useEffect } from 'react';
+  import React, { useRef, useMemo, useEffect } from "react";
   import { User, CheckCircle2, XCircle, ArrowLeft, ArrowRight, ArrowLeftRight } from 'lucide-react';
   import useFaceVerification from '../hooks/useFaceVerification';
   import * as faceapi from '@vladmandic/face-api';
@@ -22,24 +22,30 @@
    * @param {Function} onFailed - callback when face verification fails
    */
   const FaceVerifier = ({ studentId, studentData, onVerified, onFailed }) => {
-    const videoRef = useRef(null);   // reference to the <video> element for camera feed
-    const canvasRef = useRef(null);  // reference to the <canvas> overlay for roi drawing
+    const videoRef = useRef(null);
+    const canvasRef = useRef(null);
+
+    const referenceImages = useMemo(() => {
+      return Array.isArray(studentData?.faceImages) && studentData.faceImages.length
+        ? studentData.faceImages
+        : studentData?.faceImage
+          ? [studentData.faceImage]
+          : [];
+    }, [studentData?.faceImages, studentData?.faceImage]);
 
     const {
-    isReady,
-    error,
-    status,
-    faceDetected,
-    similarityScore,
-    isVerifying,
-    detectionsRef,
-
-    // for anti-spoofing
-    yawScore,
-    passedLeft,
-    passedRight,
-    livenessPassed
-  } = useFaceVerification(videoRef, studentData.faceImage, onVerified, onFailed);
+      isReady,
+      error,
+      status,
+      faceDetected,
+      similarityScore,
+      isVerifying,
+      detectionsRef,
+      yawScore,
+      passedLeft,
+      passedRight,
+      livenessPassed,
+    } = useFaceVerification(videoRef, referenceImages, onVerified, onFailed);
   const livenessProgress = (passedLeft ? 50 : 0) + (passedRight ? 50 : 0); // 0, 50, 100
   const yawClamped = Math.max(-100, Math.min(100, yawScore ?? 0));
   const yawPercent = ((yawClamped + 100) / 200) * 100; // 0..100
