@@ -1,7 +1,6 @@
 [
   {
-    "ts_utc": "2026-02-26T09:21:02.499Z",
-    "ts_manila": "2026-02-26T17:21:02.499+08:00",
+    "ts_manila": "2026-02-25T19:39:04.138+08:00",
     "event": "verification_success",
     "student": {
       "id": "2645304",
@@ -12,26 +11,200 @@
       "email": "dwayt@stibacoor.college"
     },
     "verificationResult": {
-      "similarity": 0.7106148845797147,
-      "confidence": 0.915871785151267,
-      "timestamp": "2026-02-26T09:21:02.447Z",
-      "studentId": "2645304"
+      "confidence": 0.9293794471162113,
+      "similarity": 0.8054240171562549
     }
   },
   {
-    "ts_manila": "2026-02-26T17:23:46.178+08:00",
+    "ts_manila": "2026-03-11T14:06:35.779+08:00",
     "event": "verification_success",
     "student": {
-      "id": "2645304",
-      "displayid": "26-4-5304",
-      "department": "Engineering",
+      "id": "2648510",
+      "displayid": "26-4-8510",
+      "department": "AI",
       "year": "2026",
-      "name": "Dwight Justin Namuco",
-      "email": "dwayt@stibacoor.college"
+      "name": "Dwight",
+      "email": "Dwight@c8nnect.com"
     },
     "verificationResult": {
-      "confidence": 0.8581361298740667,
-      "similarity": 0.7281391807208608
+      "confidence": 0.9400740414477616,
+      "similarity": 0.7517655930177082
+    }
+  },
+  {
+    "ts_manila": "2026-03-11T14:07:36.597+08:00",
+    "event": "verification_success",
+    "student": {
+      "id": "2648510",
+      "displayid": "26-4-8510",
+      "department": "AI",
+      "year": "2026",
+      "name": "Dwight",
+      "email": "Dwight@c8nnect.com"
+    },
+    "verificationResult": {
+      "confidence": 0.945747494319678,
+      "similarity": 0.6946562987499716
+    }
+  },
+  {
+    "ts_manila": "2026-03-11T14:09:19.045+08:00",
+    "event": "verification_success",
+    "student": {
+      "id": "2648510",
+      "displayid": "26-4-8510",
+      "department": "AI",
+      "year": "2026",
+      "name": "Dwight",
+      "email": "Dwight@c8nnect.com"
+    },
+    "verificationResult": {
+      "confidence": 0.8038323400753821,
+      "similarity": 0.7480544824963519
+    }
+  },
+  {
+    "ts_manila": "2026-03-11T14:14:32.401+08:00",
+    "event": "verification_success",
+    "student": {
+      "id": "2648510",
+      "displayid": "26-4-8510",
+      "department": "AI",
+      "year": "2026",
+      "name": "Dwight",
+      "email": "Dwight@c8nnect.com"
+    },
+    "verificationResult": {
+      "confidence": 0.9647547249047649,
+      "similarity": 0.7286980011019324
+    }
+  },
+  {
+    "ts_manila": "2026-03-11T14:21:04.582+08:00",
+    "event": "verification_success",
+    "student": {
+      "id": "2648510",
+      "displayid": "26-4-8510",
+      "department": "AI",
+      "year": "2026",
+      "name": "Dwight",
+      "email": "Dwight@c8nnect.com"
+    },
+    "verificationResult": {
+      "confidence": 0.9858072265453117,
+      "similarity": 0.7173214574841105
+    }
+  },
+  {
+    "ts_manila": "2026-03-11T15:02:23.821+08:00",
+    "event": "verification_success",
+    "student": {
+      "id": "2648510",
+      "displayid": "26-4-8510",
+      "department": "AI",
+      "year": "2026",
+      "name": "Dwight",
+      "email": "Dwight@c8nnect.com"
+    },
+    "verificationResult": {
+      "confidence": 0.9858072265453117,
+      "similarity": 0.7173214574841105
+    }
+  },
+  {
+    "ts_manila": "2026-03-11T15:03:27.155+08:00",
+    "event": "verification_success",
+    "student": {
+      "id": "2648510",
+      "displayid": "26-4-8510",
+      "department": "AI",
+      "year": "2026",
+      "name": "Dwight",
+      "email": "Dwight@c8nnect.com"
+    },
+    "verificationResult": {
+      "confidence": 0.9722967593263363,
+      "similarity": 0.7148572312496209
+    }
+  },
+  {
+    "ts_manila": "2026-03-11T15:23:14.386+08:00",
+    "event": "verification_success",
+    "student": {
+      "id": "2649357",
+      "displayid": "26-4-9357",
+      "department": "AI",
+      "year": "2026",
+      "name": "Victor",
+      "email": "Victor@c8nnect.com"
+    },
+    "verificationResult": {
+      "confidence": 0.7645013492644112,
+      "similarity": 0.40625471552782233
+    }
+  },
+  {
+    "ts_manila": "2026-03-11T15:23:36.888+08:00",
+    "event": "verification_success",
+    "student": {
+      "id": "2649357",
+      "displayid": "26-4-9357",
+      "department": "AI",
+      "year": "2026",
+      "name": "Victor",
+      "email": "Victor@c8nnect.com"
+    },
+    "verificationResult": {
+      "confidence": 0.9141644498884377,
+      "similarity": 0.41884260028838627
+    }
+  },
+  {
+    "ts_manila": "2026-03-11T15:27:07.769+08:00",
+    "event": "verification_success",
+    "student": {
+      "id": "2648510",
+      "displayid": "26-4-8510",
+      "department": "AI",
+      "year": "2026",
+      "name": "Dwight",
+      "email": "Dwight@c8nnect.com"
+    },
+    "verificationResult": {
+      "confidence": 0.9177777078219992,
+      "similarity": 0.7054710016162835
+    }
+  },
+  {
+    "ts_manila": "2026-03-11T15:27:28.031+08:00",
+    "event": "verification_success",
+    "student": {
+      "id": "2649357",
+      "displayid": "26-4-9357",
+      "department": "AI",
+      "year": "2026",
+      "name": "Victor",
+      "email": "Victor@c8nnect.com"
+    },
+    "verificationResult": {
+      "confidence": 0.8824485686317708,
+      "similarity": 0.4282124132338456
+    }
+  },
+  {
+    "ts_manila": "2026-03-11T15:33:21.301+08:00",
+    "event": "verification_success",
+    "student": {
+      "id": "2648510",
+      "displayid": "26-4-8510",
+      "department": "AI",
+      "year": "2026",
+      "name": "Dwight",
+      "email": "Dwight@c8nnect.com"
+    },
+    "verificationResult": {
+      "confidence": 0.9135368543092106,
+      "similarity": 0.7136847379203344
     }
   }
 ]

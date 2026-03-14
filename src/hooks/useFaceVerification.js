@@ -41,17 +41,17 @@ const useFaceVerification = (videoRef, referenceFaceImages, onVerified, onFailed
   // --------------------
   // TUNABLE SETTINGS
   // --------------------
-  const DISTANCE_THRESHOLD = 0.60;
+  const DISTANCE_THRESHOLD = 0.40;
   const DETECTION_INTERVAL = 250;
 
-  const MAX_SAMPLES = 12;
-  const REQUIRED_GOOD_FRAMES = 6;
+  const MAX_SAMPLES = 16;
+  const REQUIRED_GOOD_FRAMES = 8;
   const BATCH_TIMEOUT_MS = 2200;
 
   const MAX_FAILED_ATTEMPTS = 5;
 
   const TINY_INPUT_SIZE = 320;
-  const SCORE_THRESHOLD = 0.5;
+  const SCORE_THRESHOLD = 0.7;
 
   const YAW_THRESHOLD = 70;
 

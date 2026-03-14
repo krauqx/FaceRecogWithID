@@ -3,8 +3,11 @@ import multer from 'multer';
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { generateStudentVariants } from './environmentsim/imageProcessor.js';
 import fs from 'fs';
 import cors from 'cors';
+
+console.log("backend: starting imports done");
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -185,19 +188,38 @@ app.post(
       }
 
       const savedPaths = [];
+      const generatedPublicPaths = [];
 
       for (let i = 0; i < files.length; i++) {
         const f = files[i];
         const ext =
-          f.mimetype === 'image/png' ? 'png' : f.mimetype === 'image/webp' ? 'webp' : 'jpg';
+          f.mimetype === 'image/png'
+            ? 'png'
+            : f.mimetype === 'image/webp'
+            ? 'webp'
+            : 'jpg';
 
         const filename = i === 0 ? `${canonicalId}.${ext}` : `${canonicalId}_${i + 1}.${ext}`;
         const filePath = path.join(uploadDir, filename);
 
         await fs.promises.writeFile(filePath, f.buffer);
+
+        // original uploaded file
         savedPaths.push(`/uploads/${filename}`);
+
+        // generated variants
+        const generatedFiles = await generateStudentVariants(
+          filePath,
+          path.join(uploadDir, 'processed')
+        );
+
+        for (const absPath of generatedFiles) {
+          const rel = path.relative(uploadDir, absPath).replaceAll('\\', '/');
+          generatedPublicPaths.push(`/uploads/${rel}`);
+        }
       }
 
+      const allFaceImages = [...savedPaths, ...generatedPublicPaths];
       const student = {
         id: canonicalId,
         displayId: formatDisplayId(canonicalId),
@@ -205,8 +227,8 @@ app.post(
         department: String(department),
         year: String(year),
         email: String(email),
-        faceImage: savedPaths[0],       // keep legacy field
-        faceImages: savedPaths,         // NEW
+        faceImage: allFaceImages[0],
+        faceImages: allFaceImages,
         createdAt: new Date().toISOString(),
       };
 
@@ -279,11 +301,28 @@ app.post('/api/students/:id/add-photos', upload.array('photos', 10), async (req,
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ success: false, message: 'Internal server error', error: err.message });
+  console.error(err);
+
+  if (err?.message?.toLowerCase().includes('file too large')) {
+    return res.status(413).json({ success: false, error: 'File too large' });
+  }
+
+  if (err?.message?.toLowerCase().includes('invalid file type')) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+
+  return res.status(500).json({
+    success: false,
+    message: 'Internal server error',
+    error: err.message,
+  });
 });
 
+console.log("backend: about to listen");
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
 
 export default app;

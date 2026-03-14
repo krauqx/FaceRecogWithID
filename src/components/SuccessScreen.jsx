@@ -112,7 +112,7 @@ const SuccessScreen = ({ studentData, verificationResult, onReset }) => {
           <div className="bg-white rounded-lg p-3 shadow-sm">
             <p className="text-xs text-gray-600 mb-1">Match Score</p>
             <p className="text-lg font-bold text-green-600">
-              {(verificationResult.similarity * 100).toFixed(1)}%
+              {(verificationResult.confidence * 100).toFixed(1)}%
             </p>
           </div>
           <div className="bg-white rounded-lg p-3 shadow-sm">

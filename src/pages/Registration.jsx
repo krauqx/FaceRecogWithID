@@ -96,7 +96,6 @@ export default function Registration() {
       setBusy(true);
       const fd = new FormData();
       // ...other fields...
-      files.forEach((f) => fd.append("photos", f)); // IMPORTANT: "photos"
       fd.append("name", name);
       fd.append("department", department);
       fd.append("year", String(year));
@@ -233,12 +232,7 @@ export default function Registration() {
             <input
               type="file"
               accept="image/jpeg,image/png,image/webp"
-              multiple
-              onChange={(e) => {
-                const files = Array.from(e.target.files || []);
-                // You can keep your validation logic; validate each file size/type
-                // Store them in state (e.g. setPhotos(files))
-              }}
+              onChange={(e) => onPickPhoto(e.target.files?.[0] || null)}
             />
             {previewUrl && (
               <div className="mt-3 flex items-center gap-3">
